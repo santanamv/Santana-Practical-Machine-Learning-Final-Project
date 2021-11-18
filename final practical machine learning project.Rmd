@@ -1,0 +1,149 @@
+---
+title: "Santana's Practical Machine Learning Final Project"
+author: "Marievee Santana"
+date: "11/17/2021"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Practical Machine Learning
+
+## Overview
+This report is the final project for the Practical Machine Learning class offered by John's Hopkins University via Coursera. I
+
+The objective of the project is to predict the manner in which 6 participants performed a variety of different exercises using an existing data set. The exercise type is captured in the “classe” variable in the training set. To complete the class requirements, ultimately the machine learning algorithm described here will be applied to the 20 test cases available in the test data and the predictions are submitted in appropriate format to the Course Project Prediction Quiz for automated grading.
+
+## Project Background
+Using devices such as Jawbone Up, Nike FuelBand, and Fitbit it is now possible to collect a large amount of data about personal activity relatively inexpensively. These type of devices are part of the quantified self movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. One thing that people regularly do is quantify how much of a particular activity they do, but they rarely quantify how well they do it. In this project, your goal will be to use data from accelerometers on the belt, forearm, arm, and dumbell of 6 participants. They were asked to perform barbell lifts correctly and incorrectly in 5 different ways. More information is available from the website here: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har (see the section on the Weight Lifting Exercise Dataset).
+
+### The Data
+The training data for this project are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv
+
+The test data are available here:
+
+https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv
+
+The data for this project come from this source: http://web.archive.org/web/20161224072740/http:/groupware.les.inf.puc-rio.br/har. If you use the document you create for this class for any purpose please cite them as they have been very generous in allowing their data to be used for this kind of assignment.
+
+## Packages Needed for Data Analysis
+First, given the complexity of the analysis included here it is necessary to load several packages that will be needed to complete all the steps for this project.
+
+```{r, results='hide', echo=TRUE, message=FALSE}
+library(knitr)
+library(lattice)
+library(ggplot2)
+library(kernlab)
+library(caret)
+library(rpart)
+library(rpart.plot)
+library(rattle)
+library(randomForest)
+library(corrplot)
+library(Hmisc)
+library(gmodels)
+set.seed(1345)
+
+```
+
+## Data Access & Clean Up
+Loading the datasets.
+```{r}
+setwd("~/Desktop/SantanaHardDisk/Courseracourses/courses/08_PracticalMachineLearning/FinalProject")
+traincsv <- read.csv("pml-training.csv")
+testcsv <- read.csv("pml-testing.csv")
+print("dimensions of training and test sets"); c(dim(traincsv), dim(testcsv))
+```
+
+Cleaning the data by removing near zero and missing observations from the training set.
+```{r}
+traincsv <- traincsv[,colMeans(is.na(traincsv)) < .9] #removing na 
+traincsv <- traincsv[,-c(1:7)] #removing irrelevant metadata
+nvz <- nearZeroVar(traincsv)
+traincsv <- traincsv[,-nvz]
+dim(traincsv)
+```
+
+The next step is to split up the training set into a sub-training set and a validation set. The split used is 70:30. 70% training set & 30% validation set.
+
+```{r}
+inTrain <- createDataPartition(y=traincsv$classe, p=0.7, list=F)
+train <- traincsv[inTrain,]
+valid <- traincsv[-inTrain,]
+```
+
+Before starting the modeling work it is good practice to run correlation analysis to get a better feel for the available data in the training set.
+
+```{r}
+corMatrix <- cor(train[, -53])
+corrplot(corMatrix, order = "AOE", method = "square", type = "lower", diag = FALSE, col= colorRampPalette(c("blue","white", "purple"))(15), tl.cex = 0.65, tl.col = rgb(0, 0, 0), win.asp=1)
+
+```
+
+Higher correlation values are denoted by larger darker squares, where negative values are red and positive values are blue. Because it looks like there are several variables that are highly correlated with one another, I will proceed to remove variables with a high correlation (i.e., higher than +/- 0.90).
+
+```{r}
+c <- findCorrelation(corMatrix, cutoff = .90)
+train <- train[,-c]
+valid <- valid[,-c]
+```
+
+## Creating the Models
+I will explore 3 popular machine learning algorithms: Decision Trees, Random Forest, and Support-Vector Machines (SVM for short). I will use the same control for training to use 3-fold cross validation
+
+```{r}
+control <- trainControl(method="cv", number=3, verboseIter=F)
+```
+
+### Decision Trees
+```{r}
+modTrees <- train(classe~., data=train, method="rpart", trControl = control, tuneLength = 5)
+fancyRpartPlot(modTrees$finalModel, palettes=c("Greys", "Blues", "BuGn", "Greens", "GnBu"))
+
+```
+
+#### Decision Trees Prediction
+```{r}
+predTrees <- predict(modTrees, valid)
+cmTrees <- confusionMatrix(predTrees, factor(valid$classe))
+cmTrees
+```
+
+### Random Forest
+```{r}
+modRF <- train(classe~., data=train, method="rf", trControl = control, tuneLength = 5)
+
+predRF <- predict(modRF, valid)
+cmRF <- confusionMatrix(predRF, factor(valid$classe))
+cmRF
+```
+
+### Support-Vector Machines (SVM)
+```{r}
+modSVM <- train(classe~., data=train, method="svmLinear", trControl = control, tuneLength = 5, verbose = F)
+
+predSVM <- predict(modSVM, valid)
+cmSVM <- confusionMatrix(predSVM, factor(valid$classe))
+cmSVM
+```
+
+## Comparing all 3 Methods--Accuracy
+
+```{r}
+Accuracy_summary <- c("Decision Trees" = cmTrees$overall[1], "Random Forests" = cmRF$overall[1], "SVM" = cmSVM$overall[1])
+Accuracy_summary
+```
+
+The best model to use is Random Forests with an accuracy rate of 0.994. This will be the model used for the test set.
+
+## Predictions on Test Set
+
+```{r}
+pred <- predict(modRF, testcsv)
+print(pred)
+```
+
